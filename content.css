@@ -1,0 +1,90 @@
+/* ─── Zoho Batch Auto-Assign — Injected Styles ────────── */
+
+/* Floating action button */
+#zba-auto-assign-btn {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 999999;
+
+  padding: 12px 22px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+
+  background: linear-gradient(135deg, #1a73e8 0%, #0d47a1 100%);
+  color: #fff;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+
+  box-shadow: 0 4px 16px rgba(13, 71, 161, 0.45);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+#zba-auto-assign-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 22px rgba(13, 71, 161, 0.55);
+}
+
+#zba-auto-assign-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+#zba-auto-assign-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Toast notifications */
+#zba-toast {
+  position: fixed;
+  bottom: 90px;
+  right: 28px;
+  z-index: 999999;
+
+  max-width: 340px;
+  padding: 13px 18px;
+  border-radius: 10px;
+
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-line;
+  word-break: break-word;
+
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+#zba-toast.zba-toast--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#zba-toast.zba-toast--success {
+  background: #1b5e20;
+  color: #e8f5e9;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+#zba-toast.zba-toast--error {
+  background: #b71c1c;
+  color: #ffebee;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+#zba-toast.zba-toast--warning {
+  background: #e65100;
+  color: #fff3e0;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+#zba-toast.zba-toast--info {
+  background: #01579b;
+  color: #e1f5fe;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}

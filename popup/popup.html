@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zoho Batch Auto-Assign</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">⚡</div>
+      <div class="header-text">
+        <h1>Batch Auto-Assign</h1>
+        <p>Zoho Inventory</p>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="status-bar" id="status-bar">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">Checking credentials...</span>
+    </div>
+
+    <!-- Credentials Section -->
+    <div id="setup-section">
+      <div class="setup-notice">
+        <strong>One-time setup.</strong> Enter your Zoho API credentials below.
+        You only need to do this once — the extension auto-refreshes your access token silently in the background.
+      </div>
+
+      <div class="section">
+        <label for="client-id">Client ID</label>
+        <input type="text" id="client-id" placeholder="1000.XXXX..." spellcheck="false" autocomplete="off">
+      </div>
+
+      <div class="section">
+        <label for="client-secret">Client Secret</label>
+        <input type="text" id="client-secret" placeholder="xxxxxxxxxxxxxxxx..." spellcheck="false" autocomplete="off">
+      </div>
+
+      <div class="section">
+        <label for="refresh-token">Refresh Token</label>
+        <input type="text" id="refresh-token" placeholder="1000.xxxx..." spellcheck="false" autocomplete="off">
+        <p class="hint">
+          Enter your <code>Client ID</code>, <code>Client Secret</code>, and <code>Refresh Token</code>.<br>
+          The refresh token <strong>does not expire</strong> — save it once and you are all set.
+        </p>
+      </div>
+
+      <button id="save-btn" class="btn-primary">Save Credentials</button>
+      <div id="saved-msg" class="saved-msg hidden">✅ Credentials saved! Token auto-refreshes silently.</div>
+    </div>
+
+    <!-- New Member Guide & Generator -->
+    <div class="new-member-card">
+      <div class="card-header" id="guide-toggle">
+        <div class="card-title-group">
+          <span class="card-icon">🔑</span>
+          <span class="card-title">New member? Get your credentials</span>
+        </div>
+        <span class="chevron" id="guide-chevron">▼</span>
+      </div>
+
+      <div class="card-body hidden" id="guide-body">
+        <p class="guide-intro">Get your credentials from the Zoho API Console in 3 simple steps:</p>
+
+        <!-- Step 1: Link to console -->
+        <div class="step-box">
+          <span class="step-num">1</span>
+          <div class="step-content">
+            <p><strong>Open Zoho API Console:</strong></p>
+            <button id="open-console-btn" class="btn-secondary">
+              Open Zoho API Console ↗
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 2: Client ID and Secret -->
+        <div class="step-box">
+          <span class="step-num">2</span>
+          <div class="step-content">
+            <p>Click <strong>Add Client</strong> &rarr; choose <strong>Self Client</strong> (or select your existing Self Client).</p>
+            <p class="step-subtext">Copy your <strong>Client ID</strong> and <strong>Client Secret</strong> into the fields above.</p>
+          </div>
+        </div>
+
+        <!-- Step 3: Scope and Code -->
+        <div class="step-box">
+          <span class="step-num">3</span>
+          <div class="step-content">
+            <p>Click the <strong>Generate Code</strong> tab in Zoho:</p>
+            <div class="scope-row">
+              <span class="scope-label">Scope:</span>
+              <code id="scope-text">ZohoInventory.fullaccess.ALL</code>
+              <button id="copy-scope-btn" class="btn-copy" title="Copy to clipboard">Copy</button>
+            </div>
+            <p class="step-subtext">
+              Time: <strong>10 minutes</strong> &middot; Description: <strong>Batch Auto-Assign</strong> &middot; Click <strong>Create</strong>.
+            </p>
+          </div>
+        </div>
+
+        <!-- Automatic Token Exchanger -->
+        <div class="exchange-box">
+          <label for="grant-code">Paste the 10-minute Generated Code here:</label>
+          <input type="text" id="grant-code" placeholder="1000.xxxx..." spellcheck="false" autocomplete="off">
+          <button id="exchange-btn" class="btn-accent">⚡ Exchange Code &amp; Save Permanently</button>
+          <div id="exchange-error" class="error-msg hidden"></div>
+          <div id="exchange-success" class="saved-msg hidden">✅ Permanent refresh token generated and saved!</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="how-to">
+      <h2>How to use</h2>
+      <ol>
+        <li>Create an invoice in Zoho Inventory (new, or from a Sales Order)</li>
+        <li>Click <strong>⚡ Auto-Assign Batches (FIFO)</strong> at the bottom-right</li>
+        <li>Check the batches (oldest expiry first), then click Save as usual</li>
+      </ol>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
