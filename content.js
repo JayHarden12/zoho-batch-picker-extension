@@ -216,20 +216,6 @@ function findOpenOptions() {
   return box ? [...box.querySelectorAll('li')].filter(isVisible) : [];
 }
 
-/** Try to read a date out of option text. Returns a sortable timestamp or null. */
-function parseExpiry(text) {
-  const iso = text.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return Date.UTC(+iso[1], +iso[2] - 1, +iso[3]);
-  const dmy = text.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})\b/);
-  if (dmy) return Date.UTC(+dmy[3], +dmy[2] - 1, +dmy[1]);
-  const named = text.match(/(?:[A-Za-z]{3,9},\s*)?[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4}/);
-  if (named) {
-    const d = new Date(named[0]);
-    if (!isNaN(d)) return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
-  }
-  return null;
-}
-
 /** Read one dropdown option into { el, label, expiry, available }. */
 function parseOption(el) {
   const lines = el.innerText.split('\n').map(s => s.trim()).filter(Boolean);
@@ -239,7 +225,7 @@ function parseOption(el) {
     el,
     label     : lines[0] || '',
     text,
-    expiry    : parseExpiry(text),
+    expiry    : BatchPlan.parseExpiry(text),
     available : qtyM ? parseNumber(qtyM[1]) : null
   };
 }

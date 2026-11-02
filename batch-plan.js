@@ -30,6 +30,31 @@
     return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null;
   }
 
+  /** First date in the text as UTC midnight in ms, or null. */
+  function parseDate(text) {
+    const iso = text.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return Date.UTC(+iso[1], +iso[2] - 1, +iso[3]);
+    const dmy = text.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})\b/);
+    if (dmy) return Date.UTC(+dmy[3], +dmy[2] - 1, +dmy[1]);
+    const named = text.match(/(?:[A-Za-z]{3,9},\s*)?[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4}/);
+    if (named) {
+      const d = new Date(named[0]);
+      if (!isNaN(d)) return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+    return null;
+  }
+
+  /**
+   * Read the expiry from a Zoho batch option, e.g. "B-100 | Balance in
+   * batch: 224 Pack(s) | Manufactured date: 2026-02-01 | Expiry Date: 2029-02-28".
+   * Zoho lists the manufactured date first, so it must never be taken as the expiry.
+   */
+  function parseExpiry(text) {
+    const labelled = text.match(/exp(?:iry|ires?|iration)?\.?(?:\s*date)?\s*:\s*(.+)/i);
+    if (labelled) return parseDate(labelled[1]);
+    return parseDate(text.replace(/(?:manufactur\w*|mfg|mfd)[^|]*/gi, ''));
+  }
+
   function formatDate(ms) {
     if (ms === null || ms === undefined) return '—';
     const d = new Date(ms);
@@ -92,5 +117,5 @@
     return notes;
   }
 
-  root.BatchPlan = { roundQty, todayUtc, parseIsoDate, formatDate, planItem, notesFor };
+  root.BatchPlan = { roundQty, todayUtc, parseIsoDate, parseExpiry, formatDate, planItem, notesFor };
 })(globalThis);

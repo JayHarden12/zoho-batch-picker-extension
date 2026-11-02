@@ -2,7 +2,7 @@
 //   /System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc test/batch-plan.test.js
 load('batch-plan.js');
 
-const { planItem, notesFor, parseIsoDate, formatDate, todayUtc, roundQty } = BatchPlan;
+const { planItem, notesFor, parseIsoDate, parseExpiry, formatDate, todayUtc, roundQty } = BatchPlan;
 const today = Date.UTC(2026, 9, 31);
 const day = 86400000;
 const batch = (id, expiry, available) => ({ id, label: id, expiry, available });
@@ -63,6 +63,15 @@ eq(roundQty(0.1 + 0.2), 0.3, 'roundQty');
 
 eq(parseIsoDate('2027-01-12'), Date.UTC(2027, 0, 12), 'parseIsoDate');
 eq([parseIsoDate(''), parseIsoDate(undefined)], [null, null], 'parseIsoDate with no date');
+eq(parseExpiry('B-100 | Balance in batch: 224 Pack(s) | Manufactured date: 2026-02-01 | Expiry Date: 2029-02-28'),
+   Date.UTC(2029, 1, 28), 'parseExpiry ignores the manufactured date (real Zoho text)');
+eq(parseExpiry('B-200 Balance in batch: 80 Pack(s) Manufactured date: 2026-03-01 Expiry Date: 2029-03-01'),
+   Date.UTC(2029, 2, 1), 'parseExpiry on one line');
+eq(parseExpiry('X | Balance in batch: 5 | Manufactured date: 2026-03-01'), null, 'manufactured date alone is not an expiry');
+eq(parseExpiry('X | 12/01/2029'), Date.UTC(2029, 0, 12), 'unlabelled day/month/year date');
+eq(parseExpiry('X | Expires: Jan 12, 2029'), Date.UTC(2029, 0, 12), 'labelled named date');
+eq(parseExpiry('X | Expiry Date: 2020-01-01'), Date.UTC(2020, 0, 1), 'a truly expired date is still read');
+eq(parseExpiry('Plain batch'), null, 'no date');
 eq(formatDate(Date.UTC(2027, 0, 5)), '05 Jan 2027', 'formatDate');
 eq(formatDate(null), '—', 'formatDate with no date');
 eq(todayUtc(new Date(2026, 9, 31, 23, 30)), Date.UTC(2026, 9, 31), 'todayUtc late in the day');
