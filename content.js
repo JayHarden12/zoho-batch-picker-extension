@@ -5,16 +5,17 @@
  * Watches for invoice pages and injects the
  * "Auto-Assign Batches (FIFO)" button.
  *
- * This script only handles the UI. All Zoho API calls run in
- * service-worker.js, because fetches from a content script are
- * blocked by the Zoho page's CORS rules.
+ * It works only through Zoho's own invoice form, in the user's
+ * existing session, so it needs no API credentials and can't change
+ * anything in Zoho until the user clicks Save.
  */
 
 'use strict';
 
 // ─── Constants ────────────────────────────────────────────
 const BTN_ID    = 'zba-auto-assign-btn';
-const TOAST_ID  = 'zba-toast';
+const PANEL_ID  = 'zba-panel';
+const SNAPSHOT_FILE = 'zoho-batch-dropdown.html';
 const BTN_LABEL = '⚡ Auto-Assign Batches (FIFO)';
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -37,27 +38,109 @@ function isNewInvoicePage() {
   return /invoices?\/new/.test(window.location.href);
 }
 
-/** Show a toast notification inside the Zoho page. */
-function showToast(message, type = 'success') {
-  let el = document.getElementById(TOAST_ID);
-  if (!el) {
-    el = document.createElement('div');
-    el.id = TOAST_ID;
-    document.body.appendChild(el);
-  }
-  el.textContent = message;
-  el.className   = `zba-toast zba-toast--${type} zba-toast--visible`;
+// ─── Panel ────────────────────────────────────────────────
+// Previews and results stay on screen until the user closes them.
 
-  clearTimeout(el._hideTimer);
-  el._hideTimer = setTimeout(() => {
-    el.classList.remove('zba-toast--visible');
-  }, type === 'error' ? 8000 : 5000);
+/** Build an element. Text always goes in as text, never as HTML. */
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children.filter(c => c !== null && c !== undefined));
+  return node;
+}
+
+function closePanel() {
+  document.getElementById(PANEL_ID)?.remove();
+}
+
+/** Replace any open panel. Returns the element to fill with content. */
+function openPanel(title, tone = 'info') {
+  closePanel();
+  const body = el('div', { className: 'zba-panel__body' });
+  const close = el('button', { className: 'zba-panel__close', type: 'button', textContent: '×', title: 'Close' });
+  close.addEventListener('click', closePanel);
+  const header = el('div', { className: 'zba-panel__header' }, el('h2', { textContent: title }), close);
+  document.body.append(el('section', { id: PANEL_ID, className: `zba-panel zba-panel--${tone}` }, header, body));
+  return body;
+}
+
+function showMessage(title, message, tone = 'info') {
+  openPanel(title, tone).append(el('p', { className: 'zba-panel__text', textContent: message }));
+}
+
+function actionButton(label, onClick, primary = false) {
+  const btn = el('button', {
+    type: 'button',
+    textContent: label,
+    className: primary ? 'zba-panel__btn zba-panel__btn--primary' : 'zba-panel__btn'
+  });
+  btn.addEventListener('click', onClick);
+  return btn;
+}
+
+function cell(text, className = '') {
+  return el('td', { textContent: text, className });
+}
+
+/** One table row per batch, or one warning row for an item with none. */
+function planRows(item) {
+  if (item.lines.length === 0) {
+    return [el('tr', {}, cell(item.name), cell('—'), cell('—'),
+      cell(item.error ? 'Not checked' : 'No batch', 'zba-panel__warn'))];
+  }
+  return item.lines.map((line, i) => el('tr', {},
+    cell(i === 0 ? item.name : ''),
+    cell(line.label),
+    cell(BatchPlan.formatDate(line.expiry)),
+    cell(String(line.qty))));
+}
+
+function notesList(items) {
+  const notes = items.flatMap(it => BatchPlan.notesFor(it).map(n => `${it.name}: ${n}`));
+  if (notes.length === 0) return null;
+  return el('ul', { className: 'zba-panel__notes' }, ...notes.map(n => el('li', { textContent: n })));
+}
+
+function showPreview(plan) {
+  const { items, snapshot } = plan;
+  const canFill = items.some(it => it.lines.length > 0);
+  const warned  = items.some(it => BatchPlan.notesFor(it).length > 0);
+  const body    = openPanel('Batch plan: review before filling', warned ? 'warning' : 'info');
+  const head    = el('tr', {}, ...['Item', 'Batch', 'Expires', 'Qty'].map(t => el('th', { textContent: t })));
+
+  body.append(el('table', { className: 'zba-panel__table' },
+    el('thead', {}, head),
+    el('tbody', {}, ...items.flatMap(planRows))));
+
+  const notes = notesList(items);
+  if (notes) body.append(notes);
+  if (snapshot) body.append(el('p', { className: 'zba-panel__hint', textContent: `A copy of Zoho's batch list was saved to Downloads as ${SNAPSHOT_FILE}.` }));
+
+  body.append(el('p', { className: 'zba-panel__hint', textContent: 'Nothing is saved to Zoho until you click Save on the invoice.' }));
+
+  const actions = el('div', { className: 'zba-panel__actions' }, actionButton('Cancel', closePanel));
+  if (canFill) {
+    actions.append(actionButton('Fill these batches', () => confirmPlan(plan), true));
+  }
+  body.append(actions);
+}
+
+function showResults(results) {
+  const failed = results.some(r => r.notes.length > 0);
+  const body   = openPanel(failed ? 'Done: some items need attention' : 'Batches filled', failed ? 'warning' : 'success');
+
+  body.append(el('ul', { className: 'zba-panel__results' }, ...results.map(r => el('li', {
+    className: r.notes.length ? 'zba-panel__result--warn' : 'zba-panel__result--ok',
+    textContent: `${r.notes.length ? '⚠' : '✓'} ${r.name}${r.notes.length ? `: ${r.notes.join('; ')}` : ''}`
+  }))));
+  body.append(el('p', { className: 'zba-panel__hint', textContent: 'Check the batches, then click Save as usual.' }));
 }
 
 // ─── Invoice Form Automation ──────────────────────────────
-// Fills Zoho's own "Select Batches" pop-up for each line item on the
-// invoice form (new or edit), FIFO by expiry. Nothing is saved to Zoho
-// until the user clicks Save as Draft / Save and Send themselves.
+// Drives Zoho's own "Select Batches" pop-up for each line item on the
+// invoice form (new or edit). First it opens each pop-up to read the
+// batches and build the preview, then it fills them once confirmed.
+// Nothing is saved to Zoho until the user clicks Save as Draft / Save
+// and Send themselves.
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -94,10 +177,18 @@ function setInputValue(input, value) {
   input.dispatchEvent(new Event('blur', { bubbles: true }));
 }
 
-/** "Select Batches" links on line items that still need batches. */
-function findSelectBatchLinks() {
-  return [...document.querySelectorAll('tbody.line-item-body tr.line-item td.item-qty a')]
-    .filter(a => /select batches/i.test(a.textContent));
+function lineItemRows() {
+  return [...document.querySelectorAll('tbody.line-item-body tr.line-item')];
+}
+
+/** The "Select Batches" link on a line item, if it still needs batches. */
+function selectBatchLink(row) {
+  return [...(row?.querySelectorAll('td.item-qty a') || [])]
+    .find(a => /select batches/i.test(a.textContent));
+}
+
+function lineItemName(row, rowIndex) {
+  return row.querySelector('.zf-item-details label')?.textContent.trim() || `Item ${rowIndex + 1}`;
 }
 
 function findBatchModal() {
@@ -133,8 +224,8 @@ function parseExpiry(text) {
   if (dmy) return Date.UTC(+dmy[3], +dmy[2] - 1, +dmy[1]);
   const named = text.match(/(?:[A-Za-z]{3,9},\s*)?[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]{3,9}\.?,?\s+\d{4}/);
   if (named) {
-    const t = Date.parse(named[0]);
-    if (!isNaN(t)) return t;
+    const d = new Date(named[0]);
+    if (!isNaN(d)) return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
   }
   return null;
 }
@@ -169,61 +260,128 @@ async function openBatchDropdown(row) {
   return els.map(parseOption).filter(isRealBatchOption);
 }
 
-/** Fill the open Select Batches pop-up FIFO. Returns a short summary string. */
-async function fillBatchModal(modal, itemName) {
+const modalRows = (modal) =>
+  [...modal.querySelectorAll('table.batches-table tbody > tr')];
+
+/** Open the pop-up for one line item. Returns the modal. */
+async function openItemModal(rowIndex) {
+  const link = selectBatchLink(lineItemRows()[rowIndex]);
+  if (!link) throw new Error('This line no longer needs batches');
+  link.click();
+  const modal = await waitFor(findBatchModal, 'Select Batches pop-up');
+  await sleep(300);
+  return modal;
+}
+
+/** Leave the pop-up without saving. The first click may only close the dropdown. */
+async function cancelBatchModal() {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const modal = findBatchModal();
+    if (!modal) return;
+    const cancel = [...modal.querySelectorAll('.modal-footer button')].find(b => /cancel/i.test(b.textContent))
+                || modal.querySelector('.modal-header .close, button.close');
+    if (!cancel) break;
+    realClick(cancel);
+    try {
+      await waitFor(() => !findBatchModal(), 'batch pop-up to close', 1200);
+      return;
+    } catch {
+      // Try again
+    }
+  }
+  throw new Error('Could not close the Select Batches pop-up');
+}
+
+/** Read one line's pop-up and plan it, leaving the pop-up closed again. */
+async function planFormItem(rowIndex, name, today, reserved, plan) {
+  const base = { rowIndex, name, needed: 0, lines: [], shortage: 0, expired: [], unknownStock: [], noExpiry: [] };
+
+  const modal  = await openItemModal(rowIndex);
   const needed = readNeededQty(modal);
-  if (!(needed > 0)) return `${itemName}: nothing to add`;
-
-  const tableBody = () => modal.querySelector('table.batches-table tbody');
-  const rows      = () => [...tableBody().querySelectorAll(':scope > tr')];
-
-  // Open the first row's dropdown to see what batches exist
-  let options = await openBatchDropdown(rows()[0]);
-  if (options.length === 0) {
-    savePageSnapshot('zoho-batch-dropdown.html');
-    throw new Error(`${itemName}: no batches listed in the dropdown`);
+  if (!(needed > 0)) {
+    await cancelBatchModal();
+    return { ...base, error: 'Could not read the quantity needed' };
   }
 
-  const withExpiry = options.filter(o => o.expiry !== null);
-  const sortable   = withExpiry.length === options.length;
-  if (sortable) options.sort((a, b) => a.expiry - b.expiry);
-  if (!sortable || options.every(o => o.available === null)) {
-    // Couldn't read expiry/stock from the list — save it so it can be studied
-    savePageSnapshot('zoho-batch-dropdown.html');
+  const options = await openBatchDropdown(modalRows(modal)[0]);
+  const batches = options.map(o => ({ id: o.label, label: o.label, expiry: o.expiry, available: o.available }));
+
+  if (options.length === 0 || batches.some(b => b.available === null || b.expiry === null)) {
+    // Couldn't read everything from the list — save it so it can be studied
+    if (!plan.snapshot) savePageSnapshot();
+    plan.snapshot = true;
   }
 
-  // Plan FIFO allocation
-  const plan = [];
-  let remaining = needed;
-  for (const o of options) {
-    if (remaining <= 0) break;
-    if (o.available !== null && o.available <= 0) continue;
-    const take = o.available === null ? remaining : Math.min(o.available, remaining);
-    plan.push({ label: o.label, qty: take });
-    remaining -= take;
+  reserved[name] = reserved[name] || {};
+  const item = { ...base, needed, ...BatchPlan.planItem(needed, batches, today, reserved[name]) };
+  await cancelBatchModal();
+  return item;
+}
+
+async function planForm() {
+  const rows = lineItemRows()
+    .map((row, rowIndex) => ({ row, rowIndex }))
+    .filter(({ row }) => selectBatchLink(row));
+
+  if (rows.length === 0) {
+    showMessage('Nothing to do', 'No line items are waiting for batch selection.');
+    return null;
   }
 
-  // Apply the plan row by row
-  for (let i = 0; i < plan.length; i++) {
+  const plan     = { items: [], snapshot: false };
+  const today    = BatchPlan.todayUtc();
+  const reserved = {};
+  const empty    = { needed: 0, lines: [], shortage: 0, expired: [], unknownStock: [], noExpiry: [] };
+
+  for (let i = 0; i < rows.length; i++) {
+    const { rowIndex, row } = rows[i];
+    const name = lineItemName(row, rowIndex);
+    try {
+      plan.items.push(await planFormItem(rowIndex, name, today, reserved, plan));
+    } catch (err) {
+      console.error('[Zoho Batch Auto-Assign]', err);
+      plan.items.push({ rowIndex, name, ...empty, error: err.message });
+      try {
+        await cancelBatchModal();
+      } catch (closeErr) {
+        // A stuck pop-up blocks every later line, so stop reading here
+        for (const later of rows.slice(i + 1)) {
+          plan.items.push({ rowIndex: later.rowIndex, name: lineItemName(later.row, later.rowIndex), ...empty, error: closeErr.message });
+        }
+        break;
+      }
+    }
+    await sleep(300);
+  }
+  return plan;
+}
+
+/** Enter one line's planned batches into its pop-up and save the pop-up. */
+async function fillFormItem(item) {
+  const modal = await openItemModal(item.rowIndex);
+  if (readNeededQty(modal) !== item.needed) {
+    throw new Error('Quantity changed after the preview; click the button again');
+  }
+
+  for (let i = 0; i < item.lines.length; i++) {
     if (i > 0) {
-      const before = rows().length;
+      const before = modalRows(modal).length;
       const newRowBtn = [...modal.querySelectorAll('button')].find(b => /new row/i.test(b.textContent));
       if (!newRowBtn) throw new Error('"New Row" button not found in pop-up');
       realClick(newRowBtn);
-      await waitFor(() => rows().length > before, 'new batch row');
+      await waitFor(() => modalRows(modal).length > before, 'new batch row');
     }
-    const row = rows()[i];
+    const row = modalRows(modal)[i];
 
-    // Dropdown for row 0 is already open from the planning step
-    if (i > 0) await openBatchDropdown(row);
-    const optEl = findOpenOptions().find(el => parseOption(el).label === plan[i].label);
-    if (!optEl) throw new Error(`Batch "${plan[i].label}" not found in dropdown`);
+    await openBatchDropdown(row);
+    const optEl = findOpenOptions().find(o => parseOption(o).label === item.lines[i].label);
+    if (!optEl) throw new Error(`Batch "${item.lines[i].label}" not found in dropdown`);
     realClick(optEl);
     await sleep(300);
 
     const qtyInput = row.querySelector('input[data-auto-gen-binding-key="out_quantity"]');
     if (!qtyInput) throw new Error('Quantity Out box not found in pop-up');
-    setInputValue(qtyInput, plan[i].qty);
+    setInputValue(qtyInput, item.lines[i].qty);
     await sleep(200);
   }
 
@@ -231,89 +389,83 @@ async function fillBatchModal(modal, itemName) {
   const saveBtn = modal.querySelector('.modal-footer button[type="submit"]');
   realClick(saveBtn);
   await waitFor(() => !findBatchModal(), 'batch pop-up to close', 4000)
-    .catch(() => { throw new Error(`${itemName}: Zoho did not accept the batches — check the pop-up`); });
-
-  const used = plan.map(p => `${p.label} ×${p.qty}`).join(', ');
-  const short = remaining > 0 ? ` (⚠️ short by ${remaining})` : '';
-  const note  = sortable ? '' : ' (⚠️ expiry not readable — used Zoho\'s list order)';
-  return `${itemName}: ${used}${short}${note}`;
+    .catch(() => { throw new Error('Zoho did not accept the batches'); });
 }
 
-/** Walk every line item that still needs batches and fill its pop-up. */
-async function autoAssignInForm() {
-  const links = findSelectBatchLinks();
-  if (links.length === 0) {
-    return { ok: false, type: 'info', message: 'ℹ️ No line items are waiting for batch selection.' };
-  }
+/** Fill every planned line. One failure doesn't stop the lines after it. */
+async function fillForm(plan) {
+  const results = [];
 
-  const done = [];
-  // Re-query each time: Zoho re-renders the table after every pop-up save
-  for (let n = 0; n < links.length; n++) {
-    const link = findSelectBatchLinks()[0];
-    if (!link) break;
-    const itemName = link.closest('tr.line-item')
-      ?.querySelector('.zf-item-details label')?.textContent.trim() || `Item ${n + 1}`;
+  for (let i = 0; i < plan.items.length; i++) {
+    const item  = plan.items[i];
+    const notes = BatchPlan.notesFor(item);
 
-    link.click();
-    const modal = await waitFor(findBatchModal, 'Select Batches pop-up');
-    await sleep(300);
-    done.push(await fillBatchModal(modal, itemName));
+    if (item.lines.length === 0) {
+      results.push({ name: item.name, notes });
+      continue;
+    }
+
+    try {
+      await fillFormItem(item);
+    } catch (err) {
+      console.error('[Zoho Batch Auto-Assign]', err);
+      notes.unshift(err.message);
+      try {
+        await cancelBatchModal();
+      } catch (closeErr) {
+        // A stuck pop-up blocks every later line
+        results.push({ name: item.name, notes: [...notes, closeErr.message] });
+        for (const later of plan.items.slice(i + 1)) {
+          results.push({ name: later.name, notes: ['Not filled: the pop-up above is still open'] });
+        }
+        break;
+      }
+    }
+    results.push({ name: item.name, notes });
     await sleep(500);
   }
 
-  return {
-    ok: true,
-    type: done.some(d => d.includes('⚠️')) ? 'warning' : 'success',
-    message: `✅ Batches filled — review, then click Save:\n• ${done.join('\n• ')}`
-  };
+  showResults(results);
 }
 
 // ─── Main Auto-Assign Handler ─────────────────────────────
 
-async function autoAssignBatches() {
+/** Run work with the button disabled, showing any failure in the panel. */
+async function withBusyButton(label, work) {
   const btn = document.getElementById(BTN_ID);
-  if (!btn) return;
-
-  // On the invoice form (new or edit) fill Zoho's own batch pop-ups
-  if (document.querySelector('tbody.line-item-body')) {
+  if (btn) {
     btn.disabled    = true;
-    btn.textContent = '⏳ Filling batches...';
-    try {
-      const result = await autoAssignInForm();
-      showToast(result.message, result.type);
-    } catch (err) {
-      showToast(`❌ ${err.message}`, 'error');
-      console.error('[Zoho Batch Auto-Assign]', err);
-    } finally {
-      btn.disabled    = false;
-      btn.textContent = BTN_LABEL;
-    }
-    return;
+    btn.textContent = label;
   }
-
-  const invoiceId = getInvoiceIdFromUrl();
-  if (!invoiceId) {
-    showToast('⚠️ Could not detect invoice ID. Make sure you are on a saved invoice page.', 'error');
-    return;
-  }
-
-  btn.disabled    = true;
-  btn.textContent = '⏳ Assigning...';
-
   try {
-    const result = await chrome.runtime.sendMessage({ type: 'AUTO_ASSIGN', invoiceId });
-    showToast(result.message, result.type);
-
-    // Reload so Zoho shows the updated batch selections
-    if (result.ok) setTimeout(() => window.location.reload(), 2500);
+    await work();
   } catch (err) {
-    // Typically "Extension context invalidated" after the extension is reloaded
-    showToast(`❌ ${err.message}. Refresh this page and try again.`, 'error');
+    showMessage('Something went wrong', `${err.message}. Refresh this page and try again.`, 'error');
     console.error('[Zoho Batch Auto-Assign]', err);
   } finally {
-    btn.disabled    = false;
-    btn.textContent = BTN_LABEL;
+    const current = document.getElementById(BTN_ID);
+    if (current) {
+      current.disabled    = false;
+      current.textContent = BTN_LABEL;
+    }
   }
+}
+
+function autoAssignBatches() {
+  closePanel();
+  return withBusyButton('⏳ Checking batches...', async () => {
+    if (!document.querySelector('tbody.line-item-body')) {
+      showMessage('Click Edit first', 'Batches are filled in on the invoice form. Click Edit on this invoice, then use the button again.');
+      return;
+    }
+    const plan = await planForm();
+    if (plan) showPreview(plan);
+  });
+}
+
+function confirmPlan(plan) {
+  closePanel();
+  return withBusyButton('⏳ Filling batches...', () => fillForm(plan));
 }
 
 // ─── Button Injection ──────────────────────────────────────
@@ -334,8 +486,8 @@ function injectButton() {
 }
 
 function removeButton() {
-  const btn = document.getElementById(BTN_ID);
-  if (btn) btn.remove();
+  document.getElementById(BTN_ID)?.remove();
+  closePanel();
 }
 
 // ─── Page Snapshot (diagnostics) ─────────────────────────
@@ -343,7 +495,7 @@ function removeButton() {
 // automatically when the batch dropdown can't be read, so the layout
 // can be studied and the automation adjusted.
 
-function savePageSnapshot(filename = 'zoho-batch-popup.html') {
+function savePageSnapshot(filename = SNAPSHOT_FILE) {
   const html = `<!-- URL: ${window.location.href} | ${new Date().toISOString()} -->\n`
              + document.documentElement.outerHTML;
   const blob = new Blob([html], { type: 'text/html' });
@@ -354,7 +506,6 @@ function savePageSnapshot(filename = 'zoho-batch-popup.html') {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  showToast(`📸 Page snapshot saved to Downloads as ${filename}`, 'success');
 }
 
 // ─── SPA Route Observer ───────────────────────────────────

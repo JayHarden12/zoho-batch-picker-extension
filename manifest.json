@@ -1,47 +1,36 @@
 {
   "manifest_version": 3,
   "name": "Zoho Batch Auto-Assign",
-  "version": "1.1",
+  "version": "2.0",
   "description": "Adds an Auto-Assign Batches (FIFO) button to Zoho Inventory invoice pages.",
-
-  "permissions": ["storage"],
-
-  "host_permissions": [
-    "https://inventory.zoho.com/*",
-    "https://books.zoho.com/*",
-    "https://www.zohoapis.com/*",
-    "https://accounts.zoho.com/*"
-  ],
-
   "icons": {
-    "16":  "icons/icon-16.png",
-    "48":  "icons/icon-48.png",
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-
   "content_scripts": [
     {
       "matches": [
         "https://inventory.zoho.com/*",
         "https://books.zoho.com/*"
       ],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "js": [
+        "batch-plan.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
-
   "action": {
     "default_popup": "popup/popup.html",
     "default_title": "Zoho Batch Auto-Assign",
     "default_icon": {
-      "16":  "icons/icon-16.png",
-      "48":  "icons/icon-48.png",
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
     }
-  },
-
-  "background": {
-    "service_worker": "service-worker.js"
   }
 }

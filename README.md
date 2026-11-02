@@ -5,16 +5,14 @@ A lightweight browser extension for Zoho Inventory users that automatically assi
 ---
 
 ## Why this approach?
-- **Zero local servers:** Nobody needs to run any server, command prompt, or Python script.
-- **Zero token hassle:** Because everyone has their credentials (`Client ID`, `Client Secret`, and `Refresh Token`), the extension silently auto-refreshes the access token in the background. No one ever has to generate or paste hourly tokens.
-- **Built-in setup helper:** New team members can open the Zoho API Console and generate their permanent refresh token directly inside the extension popup.
+- **Nothing to set up:** No servers, scripts, API credentials or tokens. It works in the Zoho session you're already signed in to.
+- **Safe by design:** It only fills in Zoho's own invoice form, so nothing reaches Zoho until you click Save.
 - **Works directly in Microsoft Edge** (and Chrome/Brave).
 
 ---
 
 ## 🚀 1-Minute Setup for Team Members
 
-### Step 1: Install the Extension in Microsoft Edge
 1. Open **Microsoft Edge**.
 2. Type `edge://extensions` in the address bar and press **Enter**.
 3. Toggle ON **"Developer mode"** (bottom-left switch).
@@ -27,45 +25,31 @@ A lightweight browser extension for Zoho Inventory users that automatically assi
 
 ---
 
-### Step 2: One-Time Credential Setup
-
-Click the extension icon in your browser toolbar.
-
-#### Option A: If you already have your Refresh Token
-1. Enter your **Client ID**, **Client Secret**, and **Refresh Token**.
-2. Click **"Save Credentials"**.
-3. You will see `✅ Credentials saved! Token auto-refreshes silently.`
-
-#### Option B: If you are a new member (Need credentials)
-Click **"🔑 New member? Get your credentials"** in the popup:
-1. Click the button: **"Open Zoho API Console ↗"**.
-2. In the Zoho API Console, click **Add Client** &rarr; choose **Self Client** (or select your existing Self Client).
-3. Copy your **Client ID** and **Client Secret** and paste them into the fields in the extension.
-4. In Zoho, click the **"Generate Code"** tab:
-   - Click the **"Copy"** button in the extension for Scope (`ZohoInventory.fullaccess.ALL`).
-   - Time Duration: **10 minutes**.
-   - Scope Description: **Batch Auto-Assign**.
-   - Click **Create** in Zoho.
-5. Copy the generated 10-minute code from Zoho, paste it into the extension's code box, and click:
-   **"⚡ Exchange Code & Save Permanently"**.
-6. The extension generates your permanent refresh token, saves it, and connects you automatically!
-
-> **Note:** You only have to do this once. Your credentials are saved locally in your own browser, and the extension will automatically keep your token valid forever.
+> **Upgrading from version 1:** remove the old extension first, then load this one. That deletes the Zoho credentials version 1 stored in your browser.
 
 ---
 
 ## ⚡ How to Use
 
-1. Go to **Zoho Inventory** (`https://inventory.zoho.com`) and create an invoice — a new one, or from a Sales Order.
-2. A blue floating button **"⚡ Auto-Assign Batches (FIFO)"** will appear at the bottom-right corner of the screen.
-3. Click the button. For every item showing **⚠ Select Batches**, the extension will:
-   - Open Zoho's "Select Batches" window
-   - Pick the batch that expires soonest first (FIFO), adding more batches if one isn't enough
-   - Fill in the quantity and save that window
-4. Check the batches, then click **Save as Draft** or **Save and Send** as usual. The extension never saves the invoice for you.
+1. Go to **Zoho Inventory** (`https://inventory.zoho.com`) and create an invoice — a new one, or from a Sales Order. For a saved invoice, click **Edit**.
+2. Click the blue **"⚡ Auto-Assign Batches (FIFO)"** button at the bottom-right corner of the screen.
+3. The extension opens each item's "Select Batches" window briefly to read the batches, then shows a **batch plan**: item, batch, expiry and quantity, with any warnings.
+4. Click **Fill these batches** to fill them in, or **Cancel** to change nothing.
+5. Check the batches, then click **Save as Draft** or **Save and Send** as usual. The extension never saves the invoice for you.
 
-> On an already-saved invoice (not the form), the button assigns batches through the Zoho API instead and reloads the page.
+### How batches are chosen
+- Soonest expiry first. If one batch isn't enough, the rest comes from the next one.
+- Expired batches are skipped and listed as a warning.
+- Batches with no readable expiry date are used last, with a warning.
+- Batches whose stock can't be read are skipped, with a warning.
+- Two lines of the same item share the stock, so they can't both use the same units.
 
 ### If something goes wrong
-- A red message explains what failed — send it (or a screenshot) to whoever maintains the extension.
-- If the extension can't read Zoho's batch list, it saves a file called `zoho-batch-dropdown.html` to your **Downloads** folder. Send that file too; it shows how Zoho displayed the list.
+- The results stay on screen until you close them. If one item fails, the others still run and the failed one is listed.
+- If the extension can't fully read Zoho's batch list, it saves a file called `zoho-batch-dropdown.html` to your **Downloads** folder. Send that file to whoever maintains the extension; it shows how Zoho displayed the list.
+
+### Running the tests
+On a Mac, from this folder:
+```
+/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc test/batch-plan.test.js
+```
